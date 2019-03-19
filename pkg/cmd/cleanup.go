@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -37,9 +38,7 @@ type CleanupOptions struct {
 
 	CleanupZombieUsers    bool
 	CleanupZombieClusters bool
-
-	// do not cleanup the context if the apiserver returns a 403, defaults to true
-	IgnorePermissionDenied bool
+	ConnectTimeoutSeconds int
 
 	RawConfig clientcmdapi.Config
 
@@ -51,8 +50,8 @@ func NewCmdCleanup(streams genericclioptions.IOStreams) *cobra.Command {
 	o := &CleanupOptions{
 		ConfigFlags: genericclioptions.NewConfigFlags(),
 
-		PrintFlags:             genericclioptions.NewPrintFlags("").WithTypeSetter(scheme.Scheme).WithDefaultOutput("yaml"),
-		IgnorePermissionDenied: true,
+		PrintFlags:            genericclioptions.NewPrintFlags("").WithTypeSetter(scheme.Scheme).WithDefaultOutput("yaml"),
+		ConnectTimeoutSeconds: int(3),
 
 		IOStreams: streams,
 	}
@@ -77,9 +76,9 @@ func NewCmdCleanup(streams genericclioptions.IOStreams) *cobra.Command {
 		},
 	}
 
-	// TODO: expose IgnorePermissionDenied as flag
-	cmd.Flags().BoolVarP(&o.CleanupZombieUsers, "users", "u", o.CleanupZombieUsers, "if true, cleanup zombie user entries in the current KUBECONFIG")
-	cmd.Flags().BoolVarP(&o.CleanupZombieClusters, "clusters", "c", o.CleanupZombieClusters, "if true, cleanup zombie cluster entries in the current KUBECONFIG")
+	cmd.Flags().BoolVarP(&o.CleanupZombieUsers, "users", "u", o.CleanupZombieUsers, "If true, cleanup zombie user entries in the current KUBECONFIG")
+	cmd.Flags().BoolVarP(&o.CleanupZombieClusters, "clusters", "c", o.CleanupZombieClusters, "If true, cleanup zombie cluster entries in the current KUBECONFIG")
+	cmd.Flags().IntVarP(&o.ConnectTimeoutSeconds, "timeout", "t", o.ConnectTimeoutSeconds, "Seconds to wait for a response from the server before continuing, defaults to 3")
 	o.ConfigFlags.AddFlags(cmd.Flags())
 	o.PrintFlags.AddFlags(cmd)
 
@@ -131,7 +130,11 @@ func (o *CleanupOptions) Run() error {
 			// TODO: log error
 			continue
 		}
-		if testConnection(clientset, o.IgnorePermissionDenied) == nil {
+		err = testConnection(clientset)
+		if err != nil {
+			fmt.Printf("%s\n", err.Error())
+		}
+		if err == nil {
 
 		}
 	}
@@ -175,14 +178,16 @@ func (o *CleanupOptions) RestClientFromContextInfo(ctxname string, context *clie
 	if err != nil {
 		return nil, err
 	}
+	restConfig.Timeout = time.Duration(o.ConnectTimeoutSeconds) * time.Second
 
 	return kubernetes.NewForConfig(restConfig)
 }
 
-// testContextConnection attempts to connect to a kubernetes API server using the provided clientset
-func testConnection(clientset *kubernetes.Clientset, ignorePermissionDenied bool) error {
-	//TODO: list clusterInfo
-	return nil
+// testContextConnection attempts to connect to a kubernetes API server and
+// get the API server version using the provided clientset
+func testConnection(clientset *kubernetes.Clientset) error {
+	_, err := clientset.Discovery().ServerVersion()
+	return err
 }
 
 // kubeConfigGetter is a noop which returns a function meeting the kubeconfigGetter interface

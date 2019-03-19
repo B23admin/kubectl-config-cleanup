@@ -1,7 +1,10 @@
 ## kubectl-cleanup ##
 
 TODO: Fix godep
-TODO: bind --kubeconfig flag
+TODO: Connection pool and make requests in parallel? The rest client appears to be making async requests
+TODO: Fix --kubeconfig flag
+TODO: Add .ignore functionality
+TODO: Remove non-applicable global cmd flags like --cluster, --namespace, etc. ?
 
 ### Build ###
 
