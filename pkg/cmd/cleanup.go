@@ -2,19 +2,18 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/genericclioptions/printers"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"k8s.io/client-go/tools/clientcmd/api/latest"
 	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
-	// Uncomment to load all auth plugins
-	// _ "k8s.io/client-go/plugin/pkg/client/auth"
 )
 
 var (
@@ -29,18 +28,21 @@ var (
 
 // CleanupOptions holds configs used to cleanup a kubeconfig file
 type CleanupOptions struct {
-	ConfigFlags *genericclioptions.ConfigFlags
+	PrintFlags *genericclioptions.PrintFlags
 
-	PrintFlags  *genericclioptions.PrintFlags
 	PrintObject printers.ResourcePrinterFunc
 
+	RawConfig       *clientcmdapi.Config
 	ResultingConfig *clientcmdapi.Config
 
 	CleanupZombieUsers    bool
 	CleanupZombieClusters bool
 	ConnectTimeoutSeconds int
-
-	RawConfig clientcmdapi.Config
+	KubeconfigPath        string
+	PrintRaw              bool
+	// PrintSummary          bool
+	// PromptUser            bool
+	// Overwrite             bool
 
 	genericclioptions.IOStreams
 }
@@ -48,10 +50,12 @@ type CleanupOptions struct {
 // NewCmdCleanup provides a cobra command wrapping CleanupOptions
 func NewCmdCleanup(streams genericclioptions.IOStreams) *cobra.Command {
 	o := &CleanupOptions{
-		ConfigFlags: genericclioptions.NewConfigFlags(),
+		PrintFlags: genericclioptions.NewPrintFlags("").WithDefaultOutput("yaml"),
 
-		PrintFlags:            genericclioptions.NewPrintFlags("").WithTypeSetter(scheme.Scheme).WithDefaultOutput("yaml"),
 		ConnectTimeoutSeconds: int(3),
+		CleanupZombieClusters: false,
+		CleanupZombieUsers:    false,
+		PrintRaw:              false,
 
 		IOStreams: streams,
 	}
@@ -76,10 +80,16 @@ func NewCmdCleanup(streams genericclioptions.IOStreams) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVarP(&o.CleanupZombieUsers, "users", "u", o.CleanupZombieUsers, "If true, cleanup zombie user entries in the current KUBECONFIG")
-	cmd.Flags().BoolVarP(&o.CleanupZombieClusters, "clusters", "c", o.CleanupZombieClusters, "If true, cleanup zombie cluster entries in the current KUBECONFIG")
-	cmd.Flags().IntVarP(&o.ConnectTimeoutSeconds, "timeout", "t", o.ConnectTimeoutSeconds, "Seconds to wait for a response from the server before continuing, defaults to 3")
-	o.ConfigFlags.AddFlags(cmd.Flags())
+	cmd.Flags().StringVar(&o.KubeconfigPath, "kubeconfig", o.KubeconfigPath, "Specify a kubeconfig file to cleanup")
+	cmd.Flags().BoolVarP(&o.CleanupZombieUsers, "users", "u", o.CleanupZombieUsers, "Cleanup zombie user entries in the current kubeconfig")
+	cmd.Flags().BoolVarP(&o.CleanupZombieClusters, "clusters", "c", o.CleanupZombieClusters, "Cleanup zombie cluster entries in the current kubeconfig")
+	// cmd.Flags().BoolVarP(&o.PromptUser, "prompt", "p", o.PromptUser, "Prompt the user before removing entries in the current kubeconfig, do not test the connection first")
+	// cmd.Flags().BoolVarP(&o.Overwrite, "overwrite", "o", o.Overwrite, "Overwrite the active kubeconfig file")
+	cmd.Flags().BoolVarP(&o.PrintRaw, "raw", "r", o.PrintRaw, "Print the raw contents of the kubeconfig after cleanup, suitable for piping to a new file")
+	// cmd.Flags().BoolVarP(&o.PrintSummary, "summary", "s", o.PrintSummary, "Print the summary of what resources were removed")
+
+	cmd.Flags().IntVarP(&o.ConnectTimeoutSeconds, "timeout", "t", o.ConnectTimeoutSeconds, "Seconds to wait for a response from the server before continuing cleaning up a cluster")
+
 	o.PrintFlags.AddFlags(cmd)
 
 	return cmd
@@ -87,8 +97,6 @@ func NewCmdCleanup(streams genericclioptions.IOStreams) *cobra.Command {
 
 // Validate ensures that all required arguments and flag values are provided
 func (o *CleanupOptions) Validate() error {
-
-	// placeholder, since there's nothing to validate yet
 	return nil
 }
 
@@ -98,11 +106,25 @@ func (o *CleanupOptions) Complete(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("unexpected arguments: %v", args)
 	}
 
-	var err error
-	o.RawConfig, err = o.ConfigFlags.ToRawKubeConfigLoader().RawConfig()
+	// Define kubeconfig precedence from lowest to highest
+	// ~/.kube/config -> $KUBECONFIG -> --kubeconfig
+	if home := homeDir(); home != "" {
+		o.KubeconfigPath = filepath.Join(home, ".kube", "config")
+	}
+	if envConfig := os.Getenv("KUBECONFIG"); envConfig != "" {
+		o.KubeconfigPath = envConfig
+	}
+	kubeconfig, err := cmd.Flags().GetString("kubeconfig")
 	if err != nil {
 		return err
 	}
+	o.KubeconfigPath = kubeconfig
+
+	config, err := clientcmd.LoadFromFile(o.KubeconfigPath)
+	if err != nil {
+		return err
+	}
+	o.RawConfig = config
 
 	printer, err := o.PrintFlags.ToPrinter()
 	if err != nil {
@@ -110,7 +132,6 @@ func (o *CleanupOptions) Complete(cmd *cobra.Command, args []string) error {
 	}
 	o.PrintObject = printer.PrintObj
 
-	// dont do anything with extensions or preferences for now
 	o.ResultingConfig = clientcmdapi.NewConfig()
 	o.ResultingConfig.Preferences = o.RawConfig.Preferences
 	o.ResultingConfig.Extensions = o.RawConfig.Extensions
@@ -123,19 +144,17 @@ func (o *CleanupOptions) Run() error {
 
 	// Test all contexts, adding valid contexts, users, and clusters back to the ResultingConfig
 	for ctxname, context := range o.RawConfig.Contexts {
-		fmt.Printf("Testing connection for context: %s\n", ctxname) // TODO: handle debug logging
 		clientset, err := o.RestClientFromContextInfo(ctxname, context)
 		if err != nil {
-			// TODO: Maintain invalid configs in result?
-			// TODO: log error
 			continue
 		}
 		err = testConnection(clientset)
-		if err != nil {
-			fmt.Printf("%s\n", err.Error())
-		}
 		if err == nil {
-
+			o.ResultingConfig.Contexts[ctxname] = context
+			o.ResultingConfig.AuthInfos[context.AuthInfo] = o.RawConfig.AuthInfos[context.AuthInfo]
+			o.ResultingConfig.Clusters[context.Cluster] = o.RawConfig.Clusters[context.Cluster]
+		} else {
+			fmt.Printf("%s\n", err.Error())
 		}
 	}
 
@@ -146,7 +165,12 @@ func (o *CleanupOptions) Run() error {
 	// TODO
 	// }
 
-	convertedObj, err := latest.Scheme.ConvertToVersion(o.ResultingConfig.DeepCopyObject(), latest.ExternalVersion)
+	if !o.PrintRaw {
+		clientcmdapi.ShortenConfig(o.ResultingConfig)
+	}
+
+	result := o.ResultingConfig.DeepCopyObject()
+	convertedObj, err := latest.Scheme.ConvertToVersion(result, latest.ExternalVersion)
 	if err != nil {
 		return err
 	}
@@ -191,10 +215,19 @@ func testConnection(clientset *kubernetes.Clientset) error {
 }
 
 // kubeConfigGetter is a noop which returns a function meeting the kubeconfigGetter interface
-// that we can use to initialize a rest client with the provided authInfo
+// which we can use to initialize a rest client with the provided authInfo
 // ref: https://github.com/kubernetes/contrib/blob/fbb1430dbec659c81b8a0f7492d14f7caeab7505/kubeform/pkg/provider/provider.go#L300
 func kubeConfigGetter(config *clientcmdapi.Config) clientcmd.KubeconfigGetter {
 	return func() (*clientcmdapi.Config, error) {
 		return config, nil
 	}
+}
+
+// homeDir returns the users home directory
+// ref: https://github.com/kubernetes/client-go/blob/48376054912de15b6386e4310192c4e8aab98403/examples/out-of-cluster-client-configuration/main.go#L90
+func homeDir() string {
+	if h := os.Getenv("HOME"); h != "" {
+		return h
+	}
+	return os.Getenv("USERPROFILE") // windows
 }
