@@ -18,11 +18,17 @@ import (
 
 var (
 	cleanupExample = `
-	# cleanup the currently active KUBECONFIG, print to stdout
+	# prints the cleaned kubeconfig to stdout, similar to running: kubectl config view
 	%[1]s cleanup
 
-	# cleanup clusters and users not specified by a context
-	%[1]s cleanup --zombie-clusters --zombie-users
+	# cleanup and save the result back to the config file
+	%[1]s cleanup --save
+
+	# cleanup and print the configs that were removed
+	%[1]s cleanup --print-removed --raw > ./kubeconfig-removed.yaml
+
+	# print only the context names that would be removed
+	%[1]s cleanup --print-removed -o=jsonpath='{ range.contexts[*] }{ .name }{"\n"}'
 `
 )
 
@@ -32,17 +38,19 @@ type CleanupOptions struct {
 
 	PrintObject printers.ResourcePrinterFunc
 
-	RawConfig       *clientcmdapi.Config
-	ResultingConfig *clientcmdapi.Config
+	RawConfig       *clientcmdapi.Config // the starting kubeconfig
+	ResultingConfig *clientcmdapi.Config // holds configs we are keeping
+	CleanedUpConfig *clientcmdapi.Config // holds configs that were removed
 
 	CleanupZombieUsers    bool
 	CleanupZombieClusters bool
 	ConnectTimeoutSeconds int
 	KubeconfigPath        string
 	PrintRaw              bool
-	// PrintSummary          bool
+	PrintRemoved          bool
+	Save                  bool
+	// TODO: Promt before each instead of attempting to connect
 	// PromptUser            bool
-	// Overwrite             bool
 
 	genericclioptions.IOStreams
 }
@@ -56,13 +64,15 @@ func NewCmdCleanup(streams genericclioptions.IOStreams) *cobra.Command {
 		CleanupZombieClusters: false,
 		CleanupZombieUsers:    false,
 		PrintRaw:              false,
+		PrintRemoved:          false,
+		Save:                  false,
 
 		IOStreams: streams,
 	}
 
 	cmd := &cobra.Command{
 		Use:          "cleanup [flags]",
-		Short:        i18n.T("Cleanup the current KUBECONFIG to get rid of inactive clusters and users"),
+		Short:        i18n.T("Attempts to connect to each cluster defined in contexts and removes the ones that fail"),
 		Example:      fmt.Sprintf(cleanupExample, "kubectl"),
 		SilenceUsage: true,
 		RunE: func(c *cobra.Command, args []string) error {
@@ -80,15 +90,12 @@ func NewCmdCleanup(streams genericclioptions.IOStreams) *cobra.Command {
 		},
 	}
 
+	cmd.Flags().IntVarP(&o.ConnectTimeoutSeconds, "timeout", "t", o.ConnectTimeoutSeconds, "Seconds to wait for a response from the server before continuing cleanup")
 	cmd.Flags().StringVar(&o.KubeconfigPath, "kubeconfig", o.KubeconfigPath, "Specify a kubeconfig file to cleanup")
-	cmd.Flags().BoolVarP(&o.CleanupZombieUsers, "users", "u", o.CleanupZombieUsers, "Cleanup zombie user entries in the current kubeconfig")
-	cmd.Flags().BoolVarP(&o.CleanupZombieClusters, "clusters", "c", o.CleanupZombieClusters, "Cleanup zombie cluster entries in the current kubeconfig")
 	// cmd.Flags().BoolVarP(&o.PromptUser, "prompt", "p", o.PromptUser, "Prompt the user before removing entries in the current kubeconfig, do not test the connection first")
-	// cmd.Flags().BoolVarP(&o.Overwrite, "overwrite", "o", o.Overwrite, "Overwrite the active kubeconfig file")
+	cmd.Flags().BoolVarP(&o.Save, "save", "s", o.Save, "Overwrite to the current kubeconfig file")
 	cmd.Flags().BoolVarP(&o.PrintRaw, "raw", "r", o.PrintRaw, "Print the raw contents of the kubeconfig after cleanup, suitable for piping to a new file")
-	// cmd.Flags().BoolVarP(&o.PrintSummary, "summary", "s", o.PrintSummary, "Print the summary of what resources were removed")
-
-	cmd.Flags().IntVarP(&o.ConnectTimeoutSeconds, "timeout", "t", o.ConnectTimeoutSeconds, "Seconds to wait for a response from the server before continuing cleaning up a cluster")
+	cmd.Flags().BoolVar(&o.PrintRemoved, "print-removed", o.PrintRemoved, "Print the removed contents of the kubeconfig after cleanup, suitable for piping to a new file")
 
 	o.PrintFlags.AddFlags(cmd)
 
@@ -132,8 +139,11 @@ func (o *CleanupOptions) Complete(cmd *cobra.Command, args []string) error {
 	}
 	o.PrintObject = printer.PrintObj
 
+	o.CleanedUpConfig = clientcmdapi.NewConfig()
 	o.ResultingConfig = clientcmdapi.NewConfig()
+	o.CleanedUpConfig.Preferences = o.RawConfig.Preferences
 	o.ResultingConfig.Preferences = o.RawConfig.Preferences
+	o.CleanedUpConfig.Extensions = o.RawConfig.Extensions
 	o.ResultingConfig.Extensions = o.RawConfig.Extensions
 
 	return nil
@@ -148,22 +158,24 @@ func (o *CleanupOptions) Run() error {
 		if err != nil {
 			continue
 		}
+
 		err = testConnection(clientset)
 		if err == nil {
 			o.ResultingConfig.Contexts[ctxname] = context
 			o.ResultingConfig.AuthInfos[context.AuthInfo] = o.RawConfig.AuthInfos[context.AuthInfo]
 			o.ResultingConfig.Clusters[context.Cluster] = o.RawConfig.Clusters[context.Cluster]
 		} else {
-			fmt.Printf("%s\n", err.Error())
+			o.CleanedUpConfig.Contexts[ctxname] = context
+			o.CleanedUpConfig.AuthInfos[context.AuthInfo] = o.RawConfig.AuthInfos[context.AuthInfo]
+			o.CleanedUpConfig.Clusters[context.Cluster] = o.RawConfig.Clusters[context.Cluster]
 		}
 	}
 
-	// if o.CleanupZombieClusters {
-	// TODO
-	// }
-	// if o.CleanupZombieUsers {
-	// TODO
-	// }
+	// TODO: Don't remove users/clusters that are specified by multiple contexts until they are no longer referenced
+
+	if o.PrintRemoved {
+		o.ResultingConfig = o.CleanedUpConfig
+	}
 
 	if !o.PrintRaw {
 		clientcmdapi.ShortenConfig(o.ResultingConfig)
