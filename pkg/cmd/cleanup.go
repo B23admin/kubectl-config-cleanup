@@ -173,6 +173,12 @@ func (o *CleanupOptions) Run() error {
 
 	// TODO: Don't remove users/clusters that are specified by multiple contexts until they are no longer referenced
 
+	// We never want to save the contents of --print-removed back to the original file, so save
+	// and return before doing any of the print stuff
+	if o.Save {
+		return clientcmd.WriteToFile(*o.ResultingConfig, o.KubeconfigPath)
+	}
+
 	if o.PrintRemoved {
 		o.ResultingConfig = o.CleanedUpConfig
 	}
