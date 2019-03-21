@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"k8s.io/client-go/util/homedir"
+
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/genericclioptions/printers"
@@ -115,7 +117,7 @@ func (o *CleanupOptions) Complete(cmd *cobra.Command, args []string) error {
 
 	// Define kubeconfig precedence from lowest to highest
 	// ~/.kube/config -> $KUBECONFIG -> --kubeconfig
-	if home := homeDir(); home != "" {
+	if home := homedir.HomeDir(); home != "" {
 		o.KubeconfigPath = filepath.Join(home, ".kube", "config")
 	}
 	if envConfig := os.Getenv("KUBECONFIG"); envConfig != "" {
@@ -170,8 +172,6 @@ func (o *CleanupOptions) Run() error {
 			o.CleanedUpConfig.Clusters[context.Cluster] = o.RawConfig.Clusters[context.Cluster]
 		}
 	}
-
-	// TODO: Don't remove users/clusters that are specified by multiple contexts until they are no longer referenced
 
 	// We never want to save the contents of --print-removed back to the original file, so save
 	// and return before doing any of the print stuff
@@ -239,13 +239,4 @@ func kubeConfigGetter(config *clientcmdapi.Config) clientcmd.KubeconfigGetter {
 	return func() (*clientcmdapi.Config, error) {
 		return config, nil
 	}
-}
-
-// homeDir returns the users home directory
-// ref: https://github.com/kubernetes/client-go/blob/48376054912de15b6386e4310192c4e8aab98403/examples/out-of-cluster-client-configuration/main.go#L90
-func homeDir() string {
-	if h := os.Getenv("HOME"); h != "" {
-		return h
-	}
-	return os.Getenv("USERPROFILE") // windows
 }
