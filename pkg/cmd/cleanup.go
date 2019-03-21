@@ -2,21 +2,28 @@ package cmd
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
-	"k8s.io/client-go/util/homedir"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/spf13/cobra"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/genericclioptions/printers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"k8s.io/client-go/tools/clientcmd/api/latest"
+	"k8s.io/client-go/util/homedir"
 	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
 )
+
+// TODO: logging https://github.com/kubernetes/client-go/blob/ee7a1ba5cdf1292b67a1fdf1fa28f90d2a7b0084/tools/clientcmd/loader.go#L359
+// klog.V(6).Infoln( ... )
 
 var (
 	cleanupExample = `
@@ -44,13 +51,15 @@ type CleanupOptions struct {
 	ResultingConfig *clientcmdapi.Config // holds configs we are keeping
 	CleanedUpConfig *clientcmdapi.Config // holds configs that were removed
 
-	CleanupZombieUsers    bool
-	CleanupZombieClusters bool
+	CleanupIgnoreConfig *v1.ConfigMap
+	IgnoreContexts      []string
+
 	ConnectTimeoutSeconds int
 	KubeconfigPath        string
 	PrintRaw              bool
 	PrintRemoved          bool
 	Save                  bool
+
 	// TODO: Promt before each instead of attempting to connect
 	// PromptUser            bool
 
@@ -63,8 +72,6 @@ func NewCmdCleanup(streams genericclioptions.IOStreams) *cobra.Command {
 		PrintFlags: genericclioptions.NewPrintFlags("").WithDefaultOutput("yaml"),
 
 		ConnectTimeoutSeconds: int(3),
-		CleanupZombieClusters: false,
-		CleanupZombieUsers:    false,
 		PrintRaw:              false,
 		PrintRemoved:          false,
 		Save:                  false,
@@ -117,17 +124,38 @@ func (o *CleanupOptions) Complete(cmd *cobra.Command, args []string) error {
 
 	// Define kubeconfig precedence from lowest to highest
 	// ~/.kube/config -> $KUBECONFIG -> --kubeconfig
-	if home := homedir.HomeDir(); home != "" {
+	home := homedir.HomeDir()
+	if home != "" {
 		o.KubeconfigPath = filepath.Join(home, ".kube", "config")
 	}
 	if envConfig := os.Getenv("KUBECONFIG"); envConfig != "" {
 		o.KubeconfigPath = envConfig
 	}
-	kubeconfig, err := cmd.Flags().GetString("kubeconfig")
+	path, err := cmd.Flags().GetString("kubeconfig")
 	if err != nil {
 		return err
 	}
-	o.KubeconfigPath = kubeconfig
+	o.KubeconfigPath = path
+
+	// Parse cleanup.ignore ConfigMap file
+	if home != "" {
+		data, err := ioutil.ReadFile(filepath.Join(home, ".kube", "cleanup.ignore"))
+
+		// Return if the error was anything besides that the file does not exist
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+
+		ignoreconfig, err := loadConfigMap(data)
+		if err != nil {
+			return err
+		}
+		o.CleanupIgnoreConfig = ignoreconfig
+		contexts, ok := ignoreconfig.Data["contexts"]
+		if ok {
+			o.IgnoreContexts = strings.Fields(contexts)
+		}
+	}
 
 	config, err := clientcmd.LoadFromFile(o.KubeconfigPath)
 	if err != nil {
@@ -153,7 +181,6 @@ func (o *CleanupOptions) Complete(cmd *cobra.Command, args []string) error {
 
 // Run cleans up the user's current KUBECONFIG and prints the result to stdout
 func (o *CleanupOptions) Run() error {
-
 	// Test all contexts, adding valid contexts, users, and clusters back to the ResultingConfig
 	for ctxname, context := range o.RawConfig.Contexts {
 		clientset, err := o.RestClientFromContextInfo(ctxname, context)
@@ -161,7 +188,8 @@ func (o *CleanupOptions) Run() error {
 			continue
 		}
 
-		err = testConnection(clientset)
+		ignore := Contains(o.IgnoreContexts, ctxname)
+		err = testConnection(clientset, ignore)
 		if err == nil {
 			o.ResultingConfig.Contexts[ctxname] = context
 			o.ResultingConfig.AuthInfos[context.AuthInfo] = o.RawConfig.AuthInfos[context.AuthInfo]
@@ -227,7 +255,11 @@ func (o *CleanupOptions) RestClientFromContextInfo(ctxname string, context *clie
 
 // testContextConnection attempts to connect to a kubernetes API server and
 // get the API server version using the provided clientset
-func testConnection(clientset *kubernetes.Clientset) error {
+func testConnection(clientset *kubernetes.Clientset, ignore bool) error {
+	if ignore {
+		return nil
+	}
+
 	_, err := clientset.Discovery().ServerVersion()
 	return err
 }
@@ -239,4 +271,24 @@ func kubeConfigGetter(config *clientcmdapi.Config) clientcmd.KubeconfigGetter {
 	return func() (*clientcmdapi.Config, error) {
 		return config, nil
 	}
+}
+
+// loadConfigMap takes a byte slice and deserializes the contents into ConfigMap object.
+func loadConfigMap(data []byte) (*v1.ConfigMap, error) {
+	config := &v1.ConfigMap{}
+	decoded, _, err := latest.Codec.Decode(data, &schema.GroupVersionKind{Version: latest.Version, Kind: "ConfigMap"}, config)
+	if err != nil {
+		return nil, err
+	}
+	return decoded.(*v1.ConfigMap), nil
+}
+
+// Contains util, whether str x is in the slice a
+func Contains(a []string, x string) bool {
+	for _, n := range a {
+		if x == n {
+			return true
+		}
+	}
+	return false
 }
