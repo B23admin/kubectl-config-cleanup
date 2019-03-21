@@ -1,4 +1,4 @@
-## kubectl-cleanup ##
+# kubectl-cleanup #
 
 kubectl cleanup is a plugin for automatically cleaning up your kubeconfig.  Every cloud provider has their own utilities for adding kubernetes cluster credentials to your kubeconfig but they don't offer the ability to clean it up once the cluster is deleted.
 For those of us who launch and delete multiple clusters per day, it would be useful to have an automated way to clean up old kubeconfig entries. This plugin will attempt to connect to each cluster defined in a context, if the connection succeeds then the user, cluster, and context entry are maintained in the result. Otherwise, the entries are removed.
@@ -16,7 +16,6 @@ kubectl cleanup --print-removed --raw > ./kubeconfig-removed.yaml
 # print only the context names that would be removed during cleanup
 kubectl cleanup --print-removed -o=jsonpath='{ range.contexts[*] }{ .name }{"\n"}'
 ```
-
 
 ### cleanup.ignore ###
 
@@ -36,14 +35,23 @@ data:
     docker-for-desktop
 ```
 
+## Install ##
 
-### Build ###
+Just download the [latest release binary](https://github.com/b23llc/kubectl-cleanup/releases/latest) for your platform and add it to your PATH
 
-go build cmd/kubectl-cleanup.go
 
-### Install ###
+### Building from source ###
 
-mv kubectl-cleanup /usr/local/bin/.
+`go build cmd/kubectl-cleanup.go`
+
+#### Install ####
+
+`mv kubectl-cleanup /usr/local/bin/.`
+
+#### Release ####
+
+`goreleaser release`
+
 
 > Requires `kubectl > v1.12.0`
 https://kubernetes.io/docs/tasks/extend-kubectl/kubectl-plugins/#before-you-begin
