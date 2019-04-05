@@ -35,7 +35,7 @@ data:
 
 ## Install ##
 
-Install with krew: `kubectl krew install... ?`
+Install with krew: `kubectl krew install config-cleanup`
 
 or download the [latest release binary](https://github.com/b23llc/kubectl-cleanup/releases/latest) for your platform and add it to your $PATH
 
@@ -52,7 +52,7 @@ or download the [latest release binary](https://github.com/b23llc/kubectl-cleanu
 
 dryrun: `goreleaser --snapshot --skip-publish --rm-dist`
 
-publish: `goreleaser release`
+publish: `goreleaser release --rm-dist`
 
 
 > Requires `kubectl > v1.12.0`
