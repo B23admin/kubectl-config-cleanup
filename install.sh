@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 
-go build cmd/kubectl-cleanup.go && \
-mv kubectl-cleanup /usr/local/bin/.
+go build cmd/kubectl-config-cleanup.go && \
+mv kubectl-config-cleanup /usr/local/bin/kubectl-config_cleanup

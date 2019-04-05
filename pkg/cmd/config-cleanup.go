@@ -28,16 +28,16 @@ import (
 var (
 	cleanupExample = `
 	# prints the cleaned kubeconfig to stdout, similar to running: kubectl config view
-	%[1]s cleanup
+	%[1]s config-cleanup
 
 	# cleanup and save the result back to the config file
-	%[1]s cleanup --save
+	%[1]s config-cleanup --save
 
 	# cleanup and print the configs that were removed
-	%[1]s cleanup --print-removed --raw > ./kubeconfig-removed.yaml
+	%[1]s config-cleanup --print-removed --raw > ./kubeconfig-removed.yaml
 
 	# print only the context names that would be removed
-	%[1]s cleanup --print-removed -o=jsonpath='{ range.contexts[*] }{ .name }{"\n"}'
+	%[1]s config-cleanup --print-removed -o=jsonpath='{ range.contexts[*] }{ .name }{"\n"}'
 `
 )
 
@@ -80,7 +80,7 @@ func NewCmdCleanup(streams genericclioptions.IOStreams) *cobra.Command {
 	}
 
 	cmd := &cobra.Command{
-		Use:          "cleanup [flags]",
+		Use:          "config-cleanup [flags]",
 		Short:        i18n.T("Attempts to connect to each cluster defined in contexts and removes the ones that fail"),
 		Example:      fmt.Sprintf(cleanupExample, "kubectl"),
 		SilenceUsage: true,
@@ -139,7 +139,7 @@ func (o *CleanupOptions) Complete(cmd *cobra.Command, args []string) error {
 
 	// Parse cleanup.ignore ConfigMap file
 	if home != "" {
-		data, err := ioutil.ReadFile(filepath.Join(home, ".kube", "cleanup.ignore"))
+		data, err := ioutil.ReadFile(filepath.Join(home, ".kube", "config-cleanup.ignore"))
 
 		// Return if the error was anything besides that the file does not exist
 		if err != nil && !os.IsNotExist(err) {

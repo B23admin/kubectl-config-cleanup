@@ -3,8 +3,8 @@
 builds:
 - env:
     - CGO_ENABLED=0
-  main: cmd/kubectl-cleanup.go
-  binary: kubectl-cleanup
+  main: cmd/kubectl-config-cleanup.go
+  binary: kubectl-config_cleanup
 archive:
   replacements:
     darwin: Darwin
