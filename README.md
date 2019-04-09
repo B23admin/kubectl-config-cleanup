@@ -37,27 +37,31 @@ data:
 
 Install with krew: `kubectl krew install config-cleanup`
 
-or download the [latest release binary](https://github.com/b23llc/kubectl-cleanup/releases/latest) for your platform and add it to your $PATH
+or download the [latest release binary](https://github.com/b23llc/kubectl-cleanup/releases/latest) for your platform and add it to your `$PATH`
 
 
 ## Build from source ##
 
-`go build cmd/kubectl-config-cleanup.go`
+```
+$ go build cmd/kubectl-config-cleanup.go
+$ mv kubectl-config-cleanup /usr/local/bin/kubectl-config_cleanup
+```
 
-### Install ###
-
-`mv kubectl-config-cleanup /usr/local/bin/kubectl-config_cleanup`
-
-### Release ###
+## Release ##
 
 dryrun: `goreleaser --snapshot --skip-publish --rm-dist`
 
 publish: `goreleaser release --rm-dist`
 
 
-## TODO ##
+## Todo ##
 
 - Add `users` and `clusters` functionality for config-cleanup.ignore
+
+## Known issues ##
+
+- Error log message when cleaning up GKE clusters that have already been terminated
+https://github.com/kubernetes/kubernetes/issues/73791
 
 
 > Requires: [`kubectl > v1.12.0`](https://kubernetes.io/docs/tasks/extend-kubectl/kubectl-plugins/#before-you-begin)
