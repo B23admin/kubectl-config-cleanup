@@ -31,13 +31,13 @@ var (
 	# prints the cleaned kubeconfig to stdout, similar to running: kubectl config view
 	%[1]s config-cleanup
 
-	# cleanup and save the result back to the config file
-	%[1]s config-cleanup --save
+	# cleanup and save the result
+	%[1]s config-cleanup --raw > ./kubeconfig-clean.yaml
 
 	# cleanup and print the configs that were removed
 	%[1]s config-cleanup --print-removed --raw > ./kubeconfig-removed.yaml
 
-	# print only the context names that would be removed
+	# print only the context names that were removed
 	%[1]s config-cleanup --print-removed -o=jsonpath='{ range.contexts[*] }{ .name }{"\n"}'
 `
 )
@@ -54,6 +54,9 @@ type CleanupOptions struct {
 
 	CleanupIgnoreConfig *v1.ConfigMap
 	IgnoreContexts      []string
+	// TODO
+	// IgnoreUsers
+	// IgnoreClusters
 
 	ConnectTimeoutSeconds int
 	KubeconfigPath        string
@@ -61,7 +64,6 @@ type CleanupOptions struct {
 	CleanupClusters       bool
 	PrintRaw              bool
 	PrintRemoved          bool
-	Save                  bool
 
 	genericclioptions.IOStreams
 }
@@ -76,7 +78,6 @@ func NewCmdCleanup(streams genericclioptions.IOStreams) *cobra.Command {
 		CleanupUsers:          false,
 		PrintRaw:              false,
 		PrintRemoved:          false,
-		Save:                  false,
 
 		IOStreams: streams,
 	}
@@ -105,7 +106,6 @@ func NewCmdCleanup(streams genericclioptions.IOStreams) *cobra.Command {
 	cmd.Flags().StringVar(&o.KubeconfigPath, "kubeconfig", o.KubeconfigPath, "Specify a kubeconfig file to cleanup")
 	cmd.Flags().BoolVar(&o.CleanupClusters, "clusters", o.CleanupClusters, "Cleanup cluster entries which are not specified by a context")
 	cmd.Flags().BoolVar(&o.CleanupUsers, "users", o.CleanupUsers, "Cleanup user entries which are not specified by a context")
-	cmd.Flags().BoolVarP(&o.Save, "save", "s", o.Save, "Overwrite to the current kubeconfig file")
 	cmd.Flags().BoolVar(&o.PrintRaw, "raw", o.PrintRaw, "Print the raw contents of the kubeconfig after cleanup, suitable for piping to a new file")
 	cmd.Flags().BoolVar(&o.PrintRemoved, "print-removed", o.PrintRemoved, "Print the removed contents of the kubeconfig after cleanup, suitable for piping to a new file")
 
@@ -116,13 +116,6 @@ func NewCmdCleanup(streams genericclioptions.IOStreams) *cobra.Command {
 
 // Validate ensures that all required arguments and flag values are provided
 func (o *CleanupOptions) Validate() error {
-
-	// If printing removed and saving cleanup result, then we need to make sure to print
-	// the raw removed configs so that they are not lost
-	if o.PrintRemoved && !o.PrintRaw && o.Save {
-		return fmt.Errorf("--raw is a required argument when using --print-removed with --save")
-	}
-
 	return nil
 }
 
@@ -231,12 +224,6 @@ func (o *CleanupOptions) Run() error {
 	} else {
 		for name, user := range zombieUsers {
 			o.CleanedUpConfig.AuthInfos[name] = user
-		}
-	}
-
-	if o.Save {
-		if err := clientcmd.WriteToFile(*o.ResultingConfig, o.KubeconfigPath); err != nil {
-			return err
 		}
 	}
 

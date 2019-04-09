@@ -6,13 +6,13 @@ kubectl config-cleanup is a plugin for automatically cleaning up your kubeconfig
 # prints the cleaned kubeconfig to stdout, similar to running: kubectl config view
 kubectl config-cleanup
 
-# cleanup and save the result back to the config file
-kubectl config-cleanup --save
+# cleanup and save the result
+kubectl config-cleanup --raw > ./kubeconfig-clean.yaml
 
 # cleanup and print the configs that were removed
 kubectl config-cleanup --print-removed --raw > ./kubeconfig-removed.yaml
 
-# print only the context names that would be removed during cleanup
+# print only the context names that were removed
 kubectl config-cleanup --print-removed -o=jsonpath='{ range.contexts[*] }{ .name }{"\n"}'
 ```
 
@@ -57,7 +57,7 @@ publish: `goreleaser release --rm-dist`
 
 ## TODO ##
 
-- Optionally maintain users and clusters in output when they are not specified by a context
+- Add `users` and `clusters` functionality for config-cleanup.ignore
 
 
 > Requires: [`kubectl > v1.12.0`](https://kubernetes.io/docs/tasks/extend-kubectl/kubectl-plugins/#before-you-begin)
