@@ -9,6 +9,10 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/klog"
+
+	// Load client auth plugins
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"github.com/spf13/cobra"
 	v1 "k8s.io/api/core/v1"
@@ -21,9 +25,6 @@ import (
 	"k8s.io/client-go/util/homedir"
 	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
 )
-
-// TODO: logging https://github.com/kubernetes/client-go/blob/ee7a1ba5cdf1292b67a1fdf1fa28f90d2a7b0084/tools/clientcmd/loader.go#L359
-// klog.V(6).Infoln( ... )
 
 var (
 	cleanupExample = `
@@ -185,6 +186,7 @@ func (o *CleanupOptions) Run() error {
 	for ctxname, context := range o.RawConfig.Contexts {
 		clientset, err := o.RestClientFromContextInfo(ctxname, context)
 		if err != nil {
+			klog.Errorf("Failed to initialize rest client for context: %s, skipping...", ctxname)
 			continue
 		}
 
