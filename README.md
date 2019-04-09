@@ -55,6 +55,10 @@ dryrun: `goreleaser --snapshot --skip-publish --rm-dist`
 publish: `goreleaser release --rm-dist`
 
 
+## TODO ##
+
+- Optionally maintain users and clusters in output when they are not specified by a context
+
 > Requires `kubectl > v1.12.0`
 https://kubernetes.io/docs/tasks/extend-kubectl/kubectl-plugins/#before-you-begin
 
