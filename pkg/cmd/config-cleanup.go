@@ -57,12 +57,11 @@ type CleanupOptions struct {
 
 	ConnectTimeoutSeconds int
 	KubeconfigPath        string
+	CleanupUsers          bool
+	CleanupClusters       bool
 	PrintRaw              bool
 	PrintRemoved          bool
 	Save                  bool
-
-	// TODO: Promt before each instead of attempting to connect
-	// PromptUser            bool
 
 	genericclioptions.IOStreams
 }
@@ -73,6 +72,8 @@ func NewCmdCleanup(streams genericclioptions.IOStreams) *cobra.Command {
 		PrintFlags: genericclioptions.NewPrintFlags("").WithDefaultOutput("yaml"),
 
 		ConnectTimeoutSeconds: int(3),
+		CleanupClusters:       false,
+		CleanupUsers:          false,
 		PrintRaw:              false,
 		PrintRemoved:          false,
 		Save:                  false,
@@ -102,9 +103,10 @@ func NewCmdCleanup(streams genericclioptions.IOStreams) *cobra.Command {
 
 	cmd.Flags().IntVarP(&o.ConnectTimeoutSeconds, "timeout", "t", o.ConnectTimeoutSeconds, "Seconds to wait for a response from the server before continuing cleanup")
 	cmd.Flags().StringVar(&o.KubeconfigPath, "kubeconfig", o.KubeconfigPath, "Specify a kubeconfig file to cleanup")
-	// cmd.Flags().BoolVarP(&o.PromptUser, "prompt", "p", o.PromptUser, "Prompt the user before removing entries in the current kubeconfig, do not test the connection first")
+	cmd.Flags().BoolVar(&o.CleanupClusters, "clusters", o.CleanupClusters, "Cleanup cluster entries which are not specified by a context")
+	cmd.Flags().BoolVar(&o.CleanupUsers, "users", o.CleanupUsers, "Cleanup user entries which are not specified by a context")
 	cmd.Flags().BoolVarP(&o.Save, "save", "s", o.Save, "Overwrite to the current kubeconfig file")
-	cmd.Flags().BoolVarP(&o.PrintRaw, "raw", "r", o.PrintRaw, "Print the raw contents of the kubeconfig after cleanup, suitable for piping to a new file")
+	cmd.Flags().BoolVar(&o.PrintRaw, "raw", o.PrintRaw, "Print the raw contents of the kubeconfig after cleanup, suitable for piping to a new file")
 	cmd.Flags().BoolVar(&o.PrintRemoved, "print-removed", o.PrintRemoved, "Print the removed contents of the kubeconfig after cleanup, suitable for piping to a new file")
 
 	o.PrintFlags.AddFlags(cmd)
@@ -114,6 +116,13 @@ func NewCmdCleanup(streams genericclioptions.IOStreams) *cobra.Command {
 
 // Validate ensures that all required arguments and flag values are provided
 func (o *CleanupOptions) Validate() error {
+
+	// If printing removed and saving cleanup result, then we need to make sure to print
+	// the raw removed configs so that they are not lost
+	if o.PrintRemoved && !o.PrintRaw && o.Save {
+		return fmt.Errorf("--raw is a required argument when using --print-removed with --save")
+	}
+
 	return nil
 }
 
@@ -203,21 +212,43 @@ func (o *CleanupOptions) Run() error {
 		}
 	}
 
-	// We never want to save the contents of --print-removed back to the original file, so save
-	// and return before doing any of the print stuff
-	if o.Save {
-		return clientcmd.WriteToFile(*o.ResultingConfig, o.KubeconfigPath)
+	zombieClusters := clustersNotSpecifiedByAContext(o.RawConfig)
+	if !o.CleanupClusters {
+		for name, cluster := range zombieClusters {
+			o.ResultingConfig.Clusters[name] = cluster
+		}
+	} else {
+		for name, cluster := range zombieClusters {
+			o.CleanedUpConfig.Clusters[name] = cluster
+		}
 	}
 
+	zombieUsers := usersNotSpecifiedByAContext(o.RawConfig)
+	if !o.CleanupUsers {
+		for name, user := range zombieUsers {
+			o.ResultingConfig.AuthInfos[name] = user
+		}
+	} else {
+		for name, user := range zombieUsers {
+			o.CleanedUpConfig.AuthInfos[name] = user
+		}
+	}
+
+	if o.Save {
+		if err := clientcmd.WriteToFile(*o.ResultingConfig, o.KubeconfigPath); err != nil {
+			return err
+		}
+	}
+
+	result := o.ResultingConfig
 	if o.PrintRemoved {
-		o.ResultingConfig = o.CleanedUpConfig
+		result = o.CleanedUpConfig
 	}
 
 	if !o.PrintRaw {
-		clientcmdapi.ShortenConfig(o.ResultingConfig)
+		clientcmdapi.ShortenConfig(result)
 	}
 
-	result := o.ResultingConfig.DeepCopyObject()
 	convertedObj, err := latest.Scheme.ConvertToVersion(result, latest.ExternalVersion)
 	if err != nil {
 		return err
@@ -283,6 +314,42 @@ func loadConfigMap(data []byte) (*v1.ConfigMap, error) {
 		return nil, err
 	}
 	return decoded.(*v1.ConfigMap), nil
+}
+
+func clustersNotSpecifiedByAContext(rawconfig *clientcmdapi.Config) map[string]*clientcmdapi.Cluster {
+	clustersInUse := []string{}
+	for _, context := range rawconfig.Contexts {
+		clustersInUse = append(clustersInUse, context.Cluster)
+	}
+	allClusters := []string{}
+	for name := range rawconfig.Clusters {
+		allClusters = append(allClusters, name)
+	}
+	zombies := map[string]*clientcmdapi.Cluster{}
+	for _, c := range allClusters {
+		if !Contains(clustersInUse, c) {
+			zombies[c] = rawconfig.Clusters[c]
+		}
+	}
+	return zombies
+}
+
+func usersNotSpecifiedByAContext(rawconfig *clientcmdapi.Config) map[string]*clientcmdapi.AuthInfo {
+	authInfosInUse := []string{}
+	for _, context := range rawconfig.Contexts {
+		authInfosInUse = append(authInfosInUse, context.AuthInfo)
+	}
+	allAuthInfos := []string{}
+	for name := range rawconfig.AuthInfos {
+		allAuthInfos = append(allAuthInfos, name)
+	}
+	zombies := map[string]*clientcmdapi.AuthInfo{}
+	for _, a := range allAuthInfos {
+		if !Contains(authInfosInUse, a) {
+			zombies[a] = rawconfig.AuthInfos[a]
+		}
+	}
+	return zombies
 }
 
 // Contains util, whether str x is in the slice a
