@@ -59,7 +59,7 @@ publish: `goreleaser release --rm-dist`
 
 - Optionally maintain users and clusters in output when they are not specified by a context
 
-> Requires `kubectl > v1.12.0`
-https://kubernetes.io/docs/tasks/extend-kubectl/kubectl-plugins/#before-you-begin
 
-> NOTE: cleanup does not support merging kubeconfig files: https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/#the-kubeconfig-environment-variable
+> Requires: [`kubectl > v1.12.0`](https://kubernetes.io/docs/tasks/extend-kubectl/kubectl-plugins/#before-you-begin)
+
+> NOTE: cleanup does not support [merging kubeconfig files](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/#the-kubeconfig-environment-variable)
