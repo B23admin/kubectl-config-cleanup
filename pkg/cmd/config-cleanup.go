@@ -186,7 +186,7 @@ func (o *CleanupOptions) Run() error {
 	for ctxname, context := range o.RawConfig.Contexts {
 		clientset, err := o.RestClientFromContextInfo(ctxname, context)
 		if err != nil {
-			klog.Errorf("Failed to initialize rest client for context: %s, skipping...", ctxname)
+			klog.Errorf("Error initializing rest client for context(%s): %v", ctxname, err)
 			continue
 		}
 
