@@ -1,11 +1,51 @@
 {
-	"ImportPath": "github.com/b23llc/kubectl-cleanup",
+	"ImportPath": "github.com/b23llc/kubectl-config-cleanup",
 	"GoVersion": "go1.12",
 	"GodepVersion": "v80",
 	"Packages": [
 		"./..."
 	],
 	"Deps": [
+		{
+			"ImportPath": "cloud.google.com/go/compute/metadata",
+			"Comment": "v0.1.0-115-g3b1ae453",
+			"Rev": "3b1ae45394a234c385be014e9a488f2bb6eef821"
+		},
+		{
+			"ImportPath": "cloud.google.com/go/internal",
+			"Comment": "v0.1.0-115-g3b1ae453",
+			"Rev": "3b1ae45394a234c385be014e9a488f2bb6eef821"
+		},
+		{
+			"ImportPath": "github.com/Azure/go-autorest/autorest",
+			"Comment": "v11.1.0",
+			"Rev": "ea233b6412b0421a65dc6160e16c893364664a95"
+		},
+		{
+			"ImportPath": "github.com/Azure/go-autorest/autorest/adal",
+			"Comment": "v11.1.0",
+			"Rev": "ea233b6412b0421a65dc6160e16c893364664a95"
+		},
+		{
+			"ImportPath": "github.com/Azure/go-autorest/autorest/azure",
+			"Comment": "v11.1.0",
+			"Rev": "ea233b6412b0421a65dc6160e16c893364664a95"
+		},
+		{
+			"ImportPath": "github.com/Azure/go-autorest/autorest/date",
+			"Comment": "v11.1.0",
+			"Rev": "ea233b6412b0421a65dc6160e16c893364664a95"
+		},
+		{
+			"ImportPath": "github.com/Azure/go-autorest/logger",
+			"Comment": "v11.1.0",
+			"Rev": "ea233b6412b0421a65dc6160e16c893364664a95"
+		},
+		{
+			"ImportPath": "github.com/Azure/go-autorest/version",
+			"Comment": "v11.1.0",
+			"Rev": "ea233b6412b0421a65dc6160e16c893364664a95"
+		},
 		{
 			"ImportPath": "github.com/chai2010/gettext-go/gettext",
 			"Rev": "bf70f2a70fb1b1f36d90d671a72795984eab0fcb"
@@ -21,6 +61,11 @@
 		{
 			"ImportPath": "github.com/chai2010/gettext-go/gettext/po",
 			"Rev": "bf70f2a70fb1b1f36d90d671a72795984eab0fcb"
+		},
+		{
+			"ImportPath": "github.com/dgrijalva/jwt-go",
+			"Comment": "v3.0.0-4-g01aeca5",
+			"Rev": "01aeca54ebda6e0fbfafd0a524d234159c05ec20"
 		},
 		{
 			"ImportPath": "github.com/evanphx/json-patch",
@@ -83,6 +128,34 @@
 			"Rev": "0c5108395e2debce0d731cf0287ddf7242066aba"
 		},
 		{
+			"ImportPath": "github.com/gophercloud/gophercloud",
+			"Rev": "781450b3c4fcb4f5182bcc5133adb4b2e4a09d1d"
+		},
+		{
+			"ImportPath": "github.com/gophercloud/gophercloud/openstack",
+			"Rev": "781450b3c4fcb4f5182bcc5133adb4b2e4a09d1d"
+		},
+		{
+			"ImportPath": "github.com/gophercloud/gophercloud/openstack/identity/v2/tenants",
+			"Rev": "781450b3c4fcb4f5182bcc5133adb4b2e4a09d1d"
+		},
+		{
+			"ImportPath": "github.com/gophercloud/gophercloud/openstack/identity/v2/tokens",
+			"Rev": "781450b3c4fcb4f5182bcc5133adb4b2e4a09d1d"
+		},
+		{
+			"ImportPath": "github.com/gophercloud/gophercloud/openstack/identity/v3/tokens",
+			"Rev": "781450b3c4fcb4f5182bcc5133adb4b2e4a09d1d"
+		},
+		{
+			"ImportPath": "github.com/gophercloud/gophercloud/openstack/utils",
+			"Rev": "781450b3c4fcb4f5182bcc5133adb4b2e4a09d1d"
+		},
+		{
+			"ImportPath": "github.com/gophercloud/gophercloud/pagination",
+			"Rev": "781450b3c4fcb4f5182bcc5133adb4b2e4a09d1d"
+		},
+		{
 			"ImportPath": "github.com/gregjones/httpcache",
 			"Rev": "787624de3eb7bd915c329cba748687a3b22666a6"
 		},
@@ -139,6 +212,10 @@
 			"Rev": "0ed95abb35c445290478a5348a7b38bb154135fd"
 		},
 		{
+			"ImportPath": "golang.org/x/net/context/ctxhttp",
+			"Rev": "0ed95abb35c445290478a5348a7b38bb154135fd"
+		},
+		{
 			"ImportPath": "golang.org/x/net/http2",
 			"Rev": "0ed95abb35c445290478a5348a7b38bb154135fd"
 		},
@@ -159,7 +236,19 @@
 			"Rev": "a6bd8cefa1811bd24b86f8902872e4e8225f74c4"
 		},
 		{
+			"ImportPath": "golang.org/x/oauth2/google",
+			"Rev": "a6bd8cefa1811bd24b86f8902872e4e8225f74c4"
+		},
+		{
 			"ImportPath": "golang.org/x/oauth2/internal",
+			"Rev": "a6bd8cefa1811bd24b86f8902872e4e8225f74c4"
+		},
+		{
+			"ImportPath": "golang.org/x/oauth2/jws",
+			"Rev": "a6bd8cefa1811bd24b86f8902872e4e8225f74c4"
+		},
+		{
+			"ImportPath": "golang.org/x/oauth2/jwt",
 			"Rev": "a6bd8cefa1811bd24b86f8902872e4e8225f74c4"
 		},
 		{
@@ -775,7 +864,32 @@
 			"Rev": "f8e521c159ad09e73f31e5c977e40cb711b56f17"
 		},
 		{
+			"ImportPath": "k8s.io/client-go/plugin/pkg/client/auth",
+			"Comment": "kubernetes-1.13.0-beta.2-13-gf8e521c1",
+			"Rev": "f8e521c159ad09e73f31e5c977e40cb711b56f17"
+		},
+		{
+			"ImportPath": "k8s.io/client-go/plugin/pkg/client/auth/azure",
+			"Comment": "kubernetes-1.13.0-beta.2-13-gf8e521c1",
+			"Rev": "f8e521c159ad09e73f31e5c977e40cb711b56f17"
+		},
+		{
 			"ImportPath": "k8s.io/client-go/plugin/pkg/client/auth/exec",
+			"Comment": "kubernetes-1.13.0-beta.2-13-gf8e521c1",
+			"Rev": "f8e521c159ad09e73f31e5c977e40cb711b56f17"
+		},
+		{
+			"ImportPath": "k8s.io/client-go/plugin/pkg/client/auth/gcp",
+			"Comment": "kubernetes-1.13.0-beta.2-13-gf8e521c1",
+			"Rev": "f8e521c159ad09e73f31e5c977e40cb711b56f17"
+		},
+		{
+			"ImportPath": "k8s.io/client-go/plugin/pkg/client/auth/oidc",
+			"Comment": "kubernetes-1.13.0-beta.2-13-gf8e521c1",
+			"Rev": "f8e521c159ad09e73f31e5c977e40cb711b56f17"
+		},
+		{
+			"ImportPath": "k8s.io/client-go/plugin/pkg/client/auth/openstack",
 			"Comment": "kubernetes-1.13.0-beta.2-13-gf8e521c1",
 			"Rev": "f8e521c159ad09e73f31e5c977e40cb711b56f17"
 		},
