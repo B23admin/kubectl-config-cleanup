@@ -306,15 +306,27 @@ func (o *CleanupOptions) NewRestClientForContext(ctxname string) (*kubernetes.Cl
 func (o *CleanupOptions) keepContext(ctxname string) {
 	context := o.RawConfig.Contexts[ctxname]
 	o.ResultingConfig.Contexts[ctxname] = context
-	o.ResultingConfig.AuthInfos[context.AuthInfo] = o.RawConfig.AuthInfos[context.AuthInfo]
-	o.ResultingConfig.Clusters[context.Cluster] = o.RawConfig.Clusters[context.Cluster]
+	auth, ok := o.RawConfig.AuthInfos[context.AuthInfo]
+	if ok {
+		o.ResultingConfig.AuthInfos[context.AuthInfo] = auth
+	}
+	cluster, ok := o.RawConfig.Clusters[context.Cluster]
+	if ok {
+		o.ResultingConfig.Clusters[context.Cluster] = cluster
+	}
 }
 
 func (o *CleanupOptions) cleanupContext(ctxname string) {
 	context := o.RawConfig.Contexts[ctxname]
 	o.CleanedUpConfig.Contexts[ctxname] = context
-	o.CleanedUpConfig.AuthInfos[context.AuthInfo] = o.RawConfig.AuthInfos[context.AuthInfo]
-	o.CleanedUpConfig.Clusters[context.Cluster] = o.RawConfig.Clusters[context.Cluster]
+	auth, ok := o.RawConfig.AuthInfos[context.AuthInfo]
+	if ok {
+		o.CleanedUpConfig.AuthInfos[context.AuthInfo] = auth
+	}
+	cluster, ok := o.RawConfig.Clusters[context.Cluster]
+	if ok {
+		o.CleanedUpConfig.Clusters[context.Cluster] = cluster
+	}
 }
 
 // kubeConfigGetter is a noop which returns a function meeting the kubeconfigGetter interface
