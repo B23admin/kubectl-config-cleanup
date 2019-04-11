@@ -16,6 +16,9 @@ kubectl config-cleanup --print-removed --raw > ./kubeconfig-removed.yaml
 kubectl config-cleanup --print-removed -o=jsonpath='{ range.contexts[*] }{ .name }{"\n"}'
 ```
 
+> DO NOT attempt to overwrite the source kubeconfig, it will result in an empty config.
+See Known Issues below for details
+
 ### config-cleanup.ignore ###
 
 Add a `~/.kube/config-cleanup.ignore` to specify contexts which should be ignored during cleanup. The associated context, user, and cluster will be maintained in the output. This is useful for long running clusters where the api server is behind a firewall.
@@ -63,6 +66,9 @@ publish: `goreleaser release --rm-dist`
 - Error log message when cleaning up GKE clusters that have already been terminated
 https://github.com/kubernetes/kubernetes/issues/73791
 
+- Attempting to overwrite the source kubeconfig will wipe the config completely.
+i.e. Dont do this: `kubectl config-cleanup --kubeconfig=~/.kube/config --raw > ~/.kube/config`
+This behavior is consistent with the behavior of `kubectl config view --raw > ~/.kube/config`
 
 > Requires: [`kubectl > v1.12.0`](https://kubernetes.io/docs/tasks/extend-kubectl/kubectl-plugins/#before-you-begin)
 
