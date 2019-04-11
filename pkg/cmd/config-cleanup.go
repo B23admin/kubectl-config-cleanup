@@ -13,6 +13,7 @@ import (
 
 	// Load client auth plugins
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	"k8s.io/client-go/util/homedir"
 
 	"github.com/spf13/cobra"
 	v1 "k8s.io/api/core/v1"
@@ -22,7 +23,6 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"k8s.io/client-go/tools/clientcmd/api/latest"
-	"k8s.io/client-go/util/homedir"
 	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
 )
 
@@ -125,24 +125,19 @@ func (o *CleanupOptions) Complete(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("unexpected arguments: %v", args)
 	}
 
-	// TODO: Fix loading precedence
 	// Define kubeconfig precedence from lowest to highest
 	// ~/.kube/config -> $KUBECONFIG -> --kubeconfig
-	home := homedir.HomeDir()
-	if home != "" {
-		o.KubeconfigPath = filepath.Join(home, ".kube", "config")
+	if o.KubeconfigPath == "" {
+		if home := homedir.HomeDir(); home != "" {
+			o.KubeconfigPath = filepath.Join(home, ".kube", "config")
+		}
+		if envConfig := os.Getenv("KUBECONFIG"); envConfig != "" {
+			o.KubeconfigPath = envConfig
+		}
 	}
-	if envConfig := os.Getenv("KUBECONFIG"); envConfig != "" {
-		o.KubeconfigPath = envConfig
-	}
-	path, err := cmd.Flags().GetString("kubeconfig")
-	if err != nil {
-		return err
-	}
-	o.KubeconfigPath = path
 
 	// Parse cleanup.ignore ConfigMap file
-	if home != "" {
+	if home := homedir.HomeDir(); home != "" {
 		data, err := ioutil.ReadFile(filepath.Join(home, ".kube", "config-cleanup.ignore"))
 
 		// Return if the error was anything besides that the file does not exist
