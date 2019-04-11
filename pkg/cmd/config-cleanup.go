@@ -125,6 +125,7 @@ func (o *CleanupOptions) Complete(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("unexpected arguments: %v", args)
 	}
 
+	// TODO: Fix loading precedence
 	// Define kubeconfig precedence from lowest to highest
 	// ~/.kube/config -> $KUBECONFIG -> --kubeconfig
 	home := homedir.HomeDir()
@@ -182,29 +183,54 @@ func (o *CleanupOptions) Complete(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// Run cleans up the user's current KUBECONFIG and prints the result to stdout
-func (o *CleanupOptions) Run() error {
-	// Test all contexts, adding valid contexts, users, and clusters back to the ResultingConfig
-	for ctxname, context := range o.RawConfig.Contexts {
-		clientset, err := o.NewRestClientForContext(ctxname)
-		if err != nil {
-			klog.Errorf("Error initializing rest client: %v", err)
-			o.CleanedUpConfig.Contexts[ctxname] = context
-			o.CleanedUpConfig.AuthInfos[context.AuthInfo] = o.RawConfig.AuthInfos[context.AuthInfo]
-			o.CleanedUpConfig.Clusters[context.Cluster] = o.RawConfig.Clusters[context.Cluster]
+func testConnection(contexts <-chan string,
+	success chan<- string, failure chan<- string, o *CleanupOptions) {
+
+	for ctx := range contexts {
+		ignore := Contains(o.IgnoreContexts, ctx)
+		if ignore {
+			success <- ctx
 			continue
 		}
 
-		ignore := Contains(o.IgnoreContexts, ctxname)
-		err = testConnection(clientset, ignore)
-		if err == nil {
-			o.ResultingConfig.Contexts[ctxname] = context
-			o.ResultingConfig.AuthInfos[context.AuthInfo] = o.RawConfig.AuthInfos[context.AuthInfo]
-			o.ResultingConfig.Clusters[context.Cluster] = o.RawConfig.Clusters[context.Cluster]
+		clientset, err := o.NewRestClientForContext(ctx)
+		if err != nil {
+			klog.Errorf("%v", err)
+			failure <- ctx
+			continue
+		}
+
+		_, err = clientset.Discovery().ServerVersion()
+		if err != nil {
+			failure <- ctx
 		} else {
-			o.CleanedUpConfig.Contexts[ctxname] = context
-			o.CleanedUpConfig.AuthInfos[context.AuthInfo] = o.RawConfig.AuthInfos[context.AuthInfo]
-			o.CleanedUpConfig.Clusters[context.Cluster] = o.RawConfig.Clusters[context.Cluster]
+			success <- ctx
+		}
+	}
+}
+
+// Run cleans up the user's current KUBECONFIG and prints the result to stdout
+func (o *CleanupOptions) Run() error {
+	contexts := make(chan string, 100)
+	success := make(chan string)
+	failure := make(chan string)
+
+	// TODO: This is arbitrary, should there be a concurrency limit flag?
+	for w := 1; w <= 25; w++ {
+		go testConnection(contexts, success, failure, o)
+	}
+
+	for ctxname := range o.RawConfig.Contexts {
+		contexts <- ctxname
+	}
+	close(contexts)
+
+	for range o.RawConfig.Contexts {
+		select {
+		case s := <-success:
+			o.keepContext(s)
+		case f := <-failure:
+			o.cleanupContext(f)
 		}
 	}
 
@@ -277,15 +303,18 @@ func (o *CleanupOptions) NewRestClientForContext(ctxname string) (*kubernetes.Cl
 	return kubernetes.NewForConfig(restConfig)
 }
 
-// testContextConnection attempts to connect to a kubernetes API server and
-// get the API server version using the provided clientset
-func testConnection(clientset *kubernetes.Clientset, ignore bool) error {
-	if ignore {
-		return nil
-	}
+func (o *CleanupOptions) keepContext(ctxname string) {
+	context := o.RawConfig.Contexts[ctxname]
+	o.ResultingConfig.Contexts[ctxname] = context
+	o.ResultingConfig.AuthInfos[context.AuthInfo] = o.RawConfig.AuthInfos[context.AuthInfo]
+	o.ResultingConfig.Clusters[context.Cluster] = o.RawConfig.Clusters[context.Cluster]
+}
 
-	_, err := clientset.Discovery().ServerVersion()
-	return err
+func (o *CleanupOptions) cleanupContext(ctxname string) {
+	context := o.RawConfig.Contexts[ctxname]
+	o.CleanedUpConfig.Contexts[ctxname] = context
+	o.CleanedUpConfig.AuthInfos[context.AuthInfo] = o.RawConfig.AuthInfos[context.AuthInfo]
+	o.CleanedUpConfig.Clusters[context.Cluster] = o.RawConfig.Clusters[context.Cluster]
 }
 
 // kubeConfigGetter is a noop which returns a function meeting the kubeconfigGetter interface
