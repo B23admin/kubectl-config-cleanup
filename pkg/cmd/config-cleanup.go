@@ -186,9 +186,12 @@ func (o *CleanupOptions) Complete(cmd *cobra.Command, args []string) error {
 func (o *CleanupOptions) Run() error {
 	// Test all contexts, adding valid contexts, users, and clusters back to the ResultingConfig
 	for ctxname, context := range o.RawConfig.Contexts {
-		clientset, err := o.RestClientFromContextInfo(ctxname, context)
+		clientset, err := o.NewRestClientForContext(ctxname)
 		if err != nil {
-			klog.Errorf("Error initializing rest client for context(%s): %v", ctxname, err)
+			klog.Errorf("Error initializing rest client: %v", err)
+			o.CleanedUpConfig.Contexts[ctxname] = context
+			o.CleanedUpConfig.AuthInfos[context.AuthInfo] = o.RawConfig.AuthInfos[context.AuthInfo]
+			o.CleanedUpConfig.Clusters[context.Cluster] = o.RawConfig.Clusters[context.Cluster]
 			continue
 		}
 
@@ -244,11 +247,12 @@ func (o *CleanupOptions) Run() error {
 	return o.PrintObject(convertedObj, o.Out)
 }
 
-// RestClientFromContextInfo initializes an API server REST client from a given context
-func (o *CleanupOptions) RestClientFromContextInfo(ctxname string, context *clientcmdapi.Context) (*kubernetes.Clientset, error) {
+// NewRestClientForContext initializes an API server REST client from a given context
+func (o *CleanupOptions) NewRestClientForContext(ctxname string) (*kubernetes.Clientset, error) {
 
 	config := clientcmdapi.NewConfig()
 	config.CurrentContext = ctxname
+	context := o.RawConfig.Contexts[ctxname]
 
 	authInfo, ok := o.RawConfig.AuthInfos[context.AuthInfo]
 	if !ok {
