@@ -256,6 +256,11 @@ func (o *CleanupOptions) Run() error {
 		result = o.CleanedUpConfig
 	}
 
+	// GH-2: If nothing is left in output then don't print an empty kubeconfig
+	if len(result.Clusters) == 0 && len(result.Contexts) == 0 && len(result.AuthInfos) == 0 {
+		return nil
+	}
+
 	if !o.PrintRaw {
 		clientcmdapi.ShortenConfig(result)
 	}
