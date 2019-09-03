@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -73,7 +75,7 @@ func NewCmdCleanup(streams genericclioptions.IOStreams) *cobra.Command {
 	o := &CleanupOptions{
 		PrintFlags: genericclioptions.NewPrintFlags("").WithDefaultOutput("yaml"),
 
-		ConnectTimeoutSeconds: int(3),
+		ConnectTimeoutSeconds: int(10),
 		CleanupClusters:       false,
 		CleanupUsers:          false,
 		PrintRaw:              false,
@@ -81,6 +83,9 @@ func NewCmdCleanup(streams genericclioptions.IOStreams) *cobra.Command {
 
 		IOStreams: streams,
 	}
+
+	flagSet := flag.NewFlagSet("config-cleanup", flag.ExitOnError)
+	klog.InitFlags(flagSet)
 
 	cmd := &cobra.Command{
 		Use:          "config-cleanup [flags]",
@@ -102,13 +107,13 @@ func NewCmdCleanup(streams genericclioptions.IOStreams) *cobra.Command {
 		},
 	}
 
+	cmd.Flags().AddGoFlagSet(flagSet)
 	cmd.Flags().IntVarP(&o.ConnectTimeoutSeconds, "timeout", "t", o.ConnectTimeoutSeconds, "Seconds to wait for a response from the server before continuing cleanup")
 	cmd.Flags().StringVar(&o.KubeconfigPath, "kubeconfig", o.KubeconfigPath, "Specify a kubeconfig file to cleanup")
 	cmd.Flags().BoolVar(&o.CleanupClusters, "clusters", o.CleanupClusters, "Cleanup cluster entries which are not specified by a context")
 	cmd.Flags().BoolVar(&o.CleanupUsers, "users", o.CleanupUsers, "Cleanup user entries which are not specified by a context")
 	cmd.Flags().BoolVar(&o.PrintRaw, "raw", o.PrintRaw, "Print the raw contents of the kubeconfig after cleanup, suitable for piping to a new file")
 	cmd.Flags().BoolVar(&o.PrintRemoved, "print-removed", o.PrintRemoved, "Print the removed contents of the kubeconfig after cleanup, suitable for piping to a new file")
-
 	o.PrintFlags.AddFlags(cmd)
 
 	return cmd
@@ -178,29 +183,34 @@ func (o *CleanupOptions) Complete(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func testConnection(contexts <-chan string,
-	success chan<- string, failure chan<- string, o *CleanupOptions) {
+func testConnection(contexts <-chan string, success chan<- string,
+	failure chan<- string, completed *int32, o *CleanupOptions) {
 
 	for ctx := range contexts {
+
 		ignore := Contains(o.IgnoreContexts, ctx)
 		if ignore {
 			success <- ctx
+			atomic.AddInt32(completed, 1)
 			continue
 		}
 
 		clientset, err := o.NewRestClientForContext(ctx)
 		if err != nil {
-			klog.Errorf("%v", err)
+			klog.Infof("%v", err)
 			failure <- ctx
+			atomic.AddInt32(completed, 1)
 			continue
 		}
 
 		_, err = clientset.Discovery().ServerVersion()
 		if err != nil {
+			klog.Infof("%v", err)
 			failure <- ctx
 		} else {
 			success <- ctx
 		}
+		atomic.AddInt32(completed, 1)
 	}
 }
 
@@ -210,15 +220,36 @@ func (o *CleanupOptions) Run() error {
 	success := make(chan string)
 	failure := make(chan string)
 
-	// TODO: This is arbitrary, should there be a concurrency limit flag?
-	for w := 1; w <= 25; w++ {
-		go testConnection(contexts, success, failure, o)
+	var completed int32
+
+	// TODO: this is arbitrary, add a concurrency limit flag?
+	numWorkers := len(o.RawConfig.Contexts)
+	if numWorkers > 25 {
+		numWorkers = 25
+	}
+	for w := 0; w <= numWorkers; w++ {
+		go testConnection(contexts, success, failure, &completed, o)
 	}
 
 	for ctxname := range o.RawConfig.Contexts {
 		contexts <- ctxname
 	}
 	close(contexts)
+
+	// GH-1: Increase default connection timeout and print progress to stderr
+	go func() {
+		ticker := time.NewTicker(3 * time.Second)
+		for {
+			<-ticker.C
+			if completed == int32(len(o.RawConfig.Contexts)) {
+				klog.Infof("Finished testing %d connections...", completed)
+				close(success)
+				close(failure)
+				return
+			}
+			klog.Infof("Finished testing %d of %d connections...", completed, len(o.RawConfig.Contexts))
+		}
+	}()
 
 	for range o.RawConfig.Contexts {
 		select {
@@ -255,6 +286,8 @@ func (o *CleanupOptions) Run() error {
 	if o.PrintRemoved {
 		result = o.CleanedUpConfig
 	}
+
+	klog.Flush()
 
 	// GH-2: If nothing is left in output then don't print an empty kubeconfig
 	if len(result.Clusters) == 0 && len(result.Contexts) == 0 && len(result.AuthInfos) == 0 {
