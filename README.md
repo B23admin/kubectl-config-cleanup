@@ -85,7 +85,7 @@ mv ~/.kube/config.swap.tmp ~/.kube/config.swap
 The workflow would appear as:
 
 ```bash
-$ kubectl config-cleanup --raw > ./kube/config.swap
+$ kubectl config-cleanup --raw > ~/.kube/config.swap
 $ kubectl config-swap
 ```
 
