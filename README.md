@@ -1,6 +1,6 @@
 # kubectl config-cleanup plugin #
 
-kubectl config-cleanup is a plugin for automatically cleaning up your kubeconfig.  Every cloud provider has their own utilities for adding kubernetes cluster credentials to your kubeconfig but they don't offer the ability to clean it up once the cluster is deleted. For those of us who launch and delete multiple clusters per day, it would be useful to have an automated way to clean up old kubeconfig entries. This plugin will attempt to connect to each cluster defined in a context, if the connection succeeds then the user, cluster, and context entry are maintained in the result. Otherwise, the entries are removed.
+`kubectl config-cleanup` is a plugin for automatically cleaning up your kubeconfig.  Every cloud provider has their own utilities for adding kubernetes cluster credentials to your kubeconfig but they don't offer the ability to clean it up once the cluster is deleted. For those of us who launch and delete multiple clusters per day, it would be useful to have an automated way to clean up old kubeconfig entries. This plugin will attempt to connect to each cluster defined in a context, if the connection succeeds then the user, cluster, and context entry are maintained in the result. Otherwise, the entries are removed.
 
 ```bash
 # prints the cleaned kubeconfig to stdout, similar to running: kubectl config view
@@ -45,7 +45,7 @@ or download the [latest release binary](https://github.com/b23llc/kubectl-cleanu
 
 ## Build from source ##
 
-```
+```bash
 $ go build cmd/kubectl-config-cleanup.go
 $ mv kubectl-config-cleanup /usr/local/bin/kubectl-config_cleanup
 ```
@@ -67,9 +67,30 @@ publish: `goreleaser release --rm-dist`
 https://github.com/kubernetes/kubernetes/issues/73791
 
 - Attempting to overwrite the source kubeconfig will wipe the config completely.
-i.e. Dont do this: `kubectl config-cleanup --kubeconfig=~/.kube/config --raw > ~/.kube/config`
+
+i.e. Dont do this: `kubectl config-cleanup --kubeconfig=~/.kube/config --raw > ~/.kube/config`  
 This behavior is consistent with the behavior of `kubectl config view --raw > ~/.kube/config`
+
+A simple *example* shell script `kubectl-config_swap` in your path can easily solve for this: 
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+touch ~/.kube/config.swap
+mv ~/.kube/config ~/.kube/config.swap.tmp
+mv ~/.kube/config.swap ~/.kube/config
+mv ~/.kube/config.swap.tmp ~/.kube/config.swap
+```
+
+The workflow would appear as:
+
+```bash
+$ kubectl config-cleanup --raw > ~/.kube/config.swap
+$ kubectl config-swap
+```
+
+Running `config-swap` twice would revert the changes.
 
 > Requires: [`kubectl > v1.12.0`](https://kubernetes.io/docs/tasks/extend-kubectl/kubectl-plugins/#before-you-begin)
 
-> NOTE: cleanup does not support [merging kubeconfig files](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/#the-kubeconfig-environment-variable)
+> NOTE: `config-cleanup` does not support [merging kubeconfig files](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/#the-kubeconfig-environment-variable)
