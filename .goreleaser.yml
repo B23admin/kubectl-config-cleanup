@@ -8,6 +8,7 @@ builds:
     - windows
   goarch:
     - amd64
+    - arm64
   main: cmd/kubectl-config-cleanup.go
   binary: kubectl-config_cleanup
 archive:
