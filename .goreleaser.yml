@@ -3,7 +3,7 @@ project_name: kubectl-config-cleanup
 release:
   name_template: "Version {{.Version}}"
   github:
-    owner: dbkegley
+    owner: B23admin
     name: kubectl-config-cleanup
 
 before:
