@@ -25,7 +25,21 @@ kubectl config-cleanup --print-removed -o=jsonpath='{ range.contexts[*] }{ .name
 > DO NOT attempt to overwrite the source kubeconfig, it will result in an empty config.
 See Known Issues below for details
 
-### config-cleanup.ignore ###
+## Install ##
+
+Install with krew: `kubectl krew install config-cleanup`
+
+or download the [latest release binary](https://github.com/B23admin/kubectl-config-cleanup/releases/latest)
+for your platform and add it to your `$PATH`
+
+## Roadmap ##
+
+- Hide noisy inherited kubectl flags
+- Shell autocomplete
+- Add `users` and `clusters` functionality for config-cleanup.ignore
+- implement multi-flag for `--ignore-user`, `--ignore-cluster`, `--ignore-context`
+
+## config-cleanup.ignore ##
 
 Add a `~/.kube/config-cleanup.ignore` to specify contexts which should be ignored during cleanup.
 The associated context, user, and cluster will be maintained in the output. This is useful for long 
@@ -44,31 +58,25 @@ data:
     docker-for-desktop
 ```
 
-## Install ##
+## Plugin Development ##
 
-Install with krew: `kubectl krew install config-cleanup`
+> This project uses the [just](https://github.com/casey/just) command runner
 
-or download the [latest release binary](https://github.com/b23llc/kubectl-cleanup/releases/latest)
-for your platform and add it to your `$PATH`
-
-
-## Build from source ##
+### Build from source ###
 
 ```bash
-$ go build main.go -o kubectl-config_cleanup
-$ chmod 750 kubectl-config_cleanup && mv kubectl-config_cleanup /usr/local/bin/kubectl-config_cleanup
+just build
 ```
 
-## Release ##
+### Release ###
 
-dryrun: `goreleaser --snapshot --skip-publish --rm-dist`
+```bash
+# dryrun
+just dist
 
-publish: `goreleaser release --rm-dist`
-
-
-## Todo ##
-
-- Add `users` and `clusters` functionality for config-cleanup.ignore
+# todo: release by pushing a tag
+# https://github.com/goreleaser/goreleaser-action
+```
 
 ## Known issues ##
 
@@ -76,12 +84,12 @@ publish: `goreleaser release --rm-dist`
 https://github.com/kubernetes/kubernetes/issues/73791
 
 - Attempting to overwrite the source kubeconfig will wipe the config completely.
+  - `config-cleanup` does not support [merging kubeconfig files](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/#the-kubeconfig-environment-variable)
+  - This behavior is consistent with the behavior of `kubectl config view --raw > ~/.kube/config`
 
 i.e. Dont do this: `kubectl config-cleanup --kubeconfig=~/.kube/config --raw > ~/.kube/config`  
-This behavior is consistent with the behavior of `kubectl config view --raw > ~/.kube/config`
 
-A simple *example* shell script `kubectl-config_swap` in your path can easily solve for this: 
-
+A simple shell script `kubectl-config_swap` in your path can easily solve for this:
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
@@ -94,12 +102,8 @@ mv ~/.kube/config.swap.tmp ~/.kube/config.swap
 The workflow would appear as:
 
 ```bash
-$ kubectl config-cleanup --raw > ~/.kube/config.swap
-$ kubectl config-swap
+kubectl config-cleanup --raw > ~/.kube/config.swap
+kubectl config-swap
 ```
 
 Running `config-swap` twice would revert the changes.
-
-> Requires: [`kubectl > v1.12.0`](https://kubernetes.io/docs/tasks/extend-kubectl/kubectl-plugins/#before-you-begin)
-
-> NOTE: `config-cleanup` does not support [merging kubeconfig files](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/#the-kubeconfig-environment-variable)
