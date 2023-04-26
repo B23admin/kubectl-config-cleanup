@@ -1,33 +1,48 @@
----
+project_name: kubectl-config-cleanup
+
+release:
+  name_template: "Version {{.Version}}"
+  github:
+    owner: dbkegley
+    name: kubectl-config-cleanup
+
+before:
+  hooks:
+    - go mod tidy
+
 builds:
-- env:
-  - CGO_ENABLED=0
-  goos:
-    - linux
-    - darwin
-    - windows
-  goarch:
-    - amd64
-  main: cmd/kubectl-config-cleanup.go
-  binary: kubectl-config_cleanup
-archive:
-  replacements:
-    darwin: Darwin
-    linux: Linux
-    windows: Windows
-    amd64: x86_64
-  format_overrides:
-  - goos: windows
-    format: zip
+  - binary: kubectl-config_cleanup
+    ldflags: -s -w -X github.com/B23admin/kubectl-config-cleanup/buildinfo.Version=v{{.Version}} -X github.com/B23admin/kubectl-config-cleanup/buildinfo.GitSHA={{.FullCommit}}
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - format_overrides:
+      - goos: windows
+        format: zip
+
 checksum:
   name_template: 'checksums.txt'
+
 snapshot:
   name_template: "{{ .Tag }}-next"
+
 changelog:
   sort: asc
   filters:
     exclude:
-    - '^docs:'
-    - '^test:'
+      - '^docs:'
+      - '^test:'
+
 env_files:
   github_token: ~/.github/release_token
