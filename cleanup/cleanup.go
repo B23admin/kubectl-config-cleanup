@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,6 +25,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 var (
@@ -46,14 +46,6 @@ var (
 
 // Options holds configs used to cleanup a kubeconfig file
 type Options struct {
-	PrintFlags *genericclioptions.PrintFlags
-
-	PrintObject printers.ResourcePrinterFunc
-
-	RawConfig       *clientcmdapi.Config // the starting kubeconfig
-	ResultingConfig *clientcmdapi.Config // holds configs we are keeping
-	CleanedUpConfig *clientcmdapi.Config // holds configs that were removed
-
 	CleanupIgnoreConfig *k8sv1.ConfigMap
 	IgnoreContexts      []string
 	// TODO
@@ -67,37 +59,40 @@ type Options struct {
 	PrintRaw              bool
 	PrintRemoved          bool
 
-	genericclioptions.IOStreams
+	raw     *clientcmdapi.Config // the starting kubeconfig
+	result  *clientcmdapi.Config // holds configs that are kept
+	removed *clientcmdapi.Config // holds configs that were removed
+
+	ioStreams  genericclioptions.IOStreams
+	printFlags *genericclioptions.PrintFlags
+	printObj   printers.ResourcePrinterFunc
 }
 
 // NewCmdCleanup provides a cobra command wrapping CleanupOptions
 func NewCmdCleanup(in io.Reader, out, errout io.Writer) *cobra.Command {
 	streams := genericclioptions.IOStreams{In: in, Out: out, ErrOut: errout}
 	opts := &Options{
-		PrintFlags: genericclioptions.NewPrintFlags("").WithDefaultOutput("yaml"),
+		ioStreams:  streams,
+		printFlags: genericclioptions.NewPrintFlags("").WithDefaultOutput("yaml"),
 
 		ConnectTimeoutSeconds: int(10),
 		CleanupClusters:       false,
 		CleanupUsers:          false,
 		PrintRaw:              false,
 		PrintRemoved:          false,
-
-		IOStreams: streams,
 	}
 
-	flagSet := flag.NewFlagSet("config-cleanup", flag.ExitOnError)
-	klog.InitFlags(flagSet)
-
-	cmd := &cobra.Command{
-		Use:          "config-cleanup [flags]",
-		Short:        "Attempts to connect to each cluster defined in contexts and removes the ones that fail",
-		Example:      fmt.Sprintf(cleanupExample, "kubectl"),
-		SilenceUsage: true,
+	rootCmd := &cobra.Command{
+		Use:   "config-cleanup",
+		Short: "Attempts to connect to each cluster defined in contexts and removes the ones that fail",
+		// Long: "" // TODO: Add long description
+		Example: fmt.Sprintf(cleanupExample, "kubectl"),
+		CompletionOptions: cobra.CompletionOptions{
+			HiddenDefaultCmd: true,
+		},
+		Version: "v0.6.0-dev-FIXME", // TODO: Add real version information
 		RunE: func(c *cobra.Command, args []string) error {
-			if err := opts.Complete(c, args); err != nil {
-				return err
-			}
-			if err := opts.Validate(); err != nil {
+			if err := opts.init(c, args); err != nil {
 				return err
 			}
 			if err := opts.Run(); err != nil {
@@ -108,28 +103,42 @@ func NewCmdCleanup(in io.Reader, out, errout io.Writer) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().AddGoFlagSet(flagSet)
-	cmd.Flags().IntVarP(&opts.ConnectTimeoutSeconds, "timeout", "t", opts.ConnectTimeoutSeconds, "Seconds to wait for a response from the server before continuing cleanup")
-	cmd.Flags().StringVar(&opts.KubeconfigPath, "kubeconfig", opts.KubeconfigPath, "Specify a kubeconfig file to cleanup")
-	cmd.Flags().BoolVar(&opts.CleanupClusters, "clusters", opts.CleanupClusters, "Cleanup cluster entries which are not specified by a context")
-	cmd.Flags().BoolVar(&opts.CleanupUsers, "users", opts.CleanupUsers, "Cleanup user entries which are not specified by a context")
-	cmd.Flags().BoolVar(&opts.PrintRaw, "raw", opts.PrintRaw, "Print the raw contents of the kubeconfig after cleanup, suitable for piping to a new file")
-	cmd.Flags().BoolVar(&opts.PrintRemoved, "print-removed", opts.PrintRemoved, "Print the removed contents of the kubeconfig after cleanup, suitable for piping to a new file")
-	opts.PrintFlags.AddFlags(cmd)
+	// We are hiding the help sub-command here because cobra also
+	// injects the -h/--help flag automatically.
+	// https://github.com/spf13/cobra/issues/587#issuecomment-810159087
+	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 
-	return cmd
+	// *NOTE* You must call AddCommand at least once to register
+	// the completion/help builtin commands (even though we're hiding the help command anyway)
+	// cobra bug? https://github.com/spf13/cobra/issues/1915#issuecomment-1434500674
+	rootCmd.AddCommand(&cobra.Command{Hidden: true})
+
+	// Add klog flags but mark them as hidden
+	klogFlags := flag.NewFlagSet("config-cleanup", flag.ExitOnError)
+	klog.InitFlags(klogFlags)
+	rootCmd.Flags().AddGoFlagSet(klogFlags)
+	rootCmd.Flags().VisitAll(func(f *pflag.Flag) { f.Hidden = true })
+
+	rootCmd.Flags().IntVarP(&opts.ConnectTimeoutSeconds, "timeout", "t", opts.ConnectTimeoutSeconds, "Seconds to wait for a response from the server before continuing cleanup")
+	rootCmd.Flags().StringVar(&opts.KubeconfigPath, "kubeconfig", opts.KubeconfigPath, "Specify a kubeconfig file to cleanup")
+	rootCmd.Flags().BoolVar(&opts.CleanupClusters, "clusters", opts.CleanupClusters, "Cleanup cluster entries which are not specified by a context")
+	rootCmd.Flags().BoolVar(&opts.CleanupUsers, "users", opts.CleanupUsers, "Cleanup user entries which are not specified by a context")
+	rootCmd.Flags().BoolVar(&opts.PrintRaw, "raw", opts.PrintRaw, "Print the raw contents of the kubeconfig after cleanup, suitable for piping to a new file")
+	rootCmd.Flags().BoolVar(&opts.PrintRemoved, "print-removed", opts.PrintRemoved, "Print the removed contents of the kubeconfig after cleanup")
+	return rootCmd
 }
 
-// Validate ensures that all required arguments and flag values are provided
-func (o *Options) Validate() error {
-	return nil
-}
-
-// Complete sets all information required for cleaning up the current KUBECONFIG
-func (o *Options) Complete(cmd *cobra.Command, args []string) error {
+// init sets all information required for cleaning up the current KUBECONFIG
+func (o *Options) init(cmd *cobra.Command, args []string) error {
 	if len(args) != 0 {
 		return fmt.Errorf("unexpected arguments: %v", args)
 	}
+
+	printer, err := o.printFlags.ToPrinter()
+	if err != nil {
+		return err
+	}
+	o.printObj = printer.PrintObj
 
 	// Define kubeconfig precedence from lowest to highest
 	// ~/.kube/config -> $KUBECONFIG -> --kubeconfig
@@ -142,9 +151,9 @@ func (o *Options) Complete(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Parse cleanup.ignore ConfigMap file
+	// Parse config-cleanup.ignore
 	if home := homedir.HomeDir(); home != "" {
-		data, err := ioutil.ReadFile(filepath.Join(home, ".kube", "config-cleanup.ignore"))
+		data, err := os.ReadFile(filepath.Join(home, ".kube", "config-cleanup.ignore"))
 
 		// Return if the error was anything besides that the file does not exist
 		if err != nil && !os.IsNotExist(err) {
@@ -166,26 +175,24 @@ func (o *Options) Complete(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	o.RawConfig = config
+	o.raw = config
 
-	printer, err := o.PrintFlags.ToPrinter()
-	if err != nil {
-		return err
-	}
-	o.PrintObject = printer.PrintObj
-
-	o.CleanedUpConfig = clientcmdapi.NewConfig()
-	o.ResultingConfig = clientcmdapi.NewConfig()
-	o.CleanedUpConfig.Preferences = o.RawConfig.Preferences
-	o.ResultingConfig.Preferences = o.RawConfig.Preferences
-	o.CleanedUpConfig.Extensions = o.RawConfig.Extensions
-	o.ResultingConfig.Extensions = o.RawConfig.Extensions
+	o.result = clientcmdapi.NewConfig()
+	o.removed = clientcmdapi.NewConfig()
+	o.result.Preferences = o.raw.Preferences
+	o.removed.Preferences = o.raw.Preferences
+	o.result.Extensions = o.raw.Extensions
+	o.removed.Extensions = o.raw.Extensions
 
 	return nil
 }
 
-func testConnection(contexts <-chan string, success chan<- string,
-	failure chan<- string, completed *int32, o *Options) {
+func testConnection(
+	contexts <-chan string,
+	success chan<- string,
+	failure chan<- string,
+	completed *int32, o *Options,
+) {
 
 	for ctx := range contexts {
 
@@ -224,7 +231,7 @@ func (o *Options) Run() error {
 	var completed int32
 
 	// TODO: this is arbitrary, add a concurrency limit flag?
-	numWorkers := len(o.RawConfig.Contexts)
+	numWorkers := len(o.raw.Contexts)
 	if numWorkers > 25 {
 		numWorkers = 25
 	}
@@ -232,7 +239,7 @@ func (o *Options) Run() error {
 		go testConnection(contexts, success, failure, &completed, o)
 	}
 
-	for ctxname := range o.RawConfig.Contexts {
+	for ctxname := range o.raw.Contexts {
 		contexts <- ctxname
 	}
 	close(contexts)
@@ -242,17 +249,17 @@ func (o *Options) Run() error {
 		ticker := time.NewTicker(3 * time.Second)
 		for {
 			<-ticker.C
-			if completed == int32(len(o.RawConfig.Contexts)) {
+			if completed == int32(len(o.raw.Contexts)) {
 				klog.Infof("Finished testing %d connections...", completed)
 				close(success)
 				close(failure)
 				return
 			}
-			klog.Infof("Finished testing %d of %d connections...", completed, len(o.RawConfig.Contexts))
+			klog.Infof("Finished testing %d of %d connections...", completed, len(o.raw.Contexts))
 		}
 	}()
 
-	for range o.RawConfig.Contexts {
+	for range o.raw.Contexts {
 		select {
 		case s := <-success:
 			o.keepContext(s)
@@ -261,31 +268,31 @@ func (o *Options) Run() error {
 		}
 	}
 
-	zombieClusters := clustersNotSpecifiedByAContext(o.RawConfig)
+	zombieClusters := clustersNotSpecifiedByAContext(o.raw)
 	if !o.CleanupClusters {
 		for name, cluster := range zombieClusters {
-			o.ResultingConfig.Clusters[name] = cluster
+			o.result.Clusters[name] = cluster
 		}
 	} else {
 		for name, cluster := range zombieClusters {
-			o.CleanedUpConfig.Clusters[name] = cluster
+			o.removed.Clusters[name] = cluster
 		}
 	}
 
-	zombieUsers := usersNotSpecifiedByAContext(o.RawConfig)
+	zombieUsers := usersNotSpecifiedByAContext(o.raw)
 	if !o.CleanupUsers {
 		for name, user := range zombieUsers {
-			o.ResultingConfig.AuthInfos[name] = user
+			o.result.AuthInfos[name] = user
 		}
 	} else {
 		for name, user := range zombieUsers {
-			o.CleanedUpConfig.AuthInfos[name] = user
+			o.removed.AuthInfos[name] = user
 		}
 	}
 
-	result := o.ResultingConfig
+	result := o.result
 	if o.PrintRemoved {
-		result = o.CleanedUpConfig
+		result = o.removed
 	}
 
 	klog.Flush()
@@ -304,7 +311,7 @@ func (o *Options) Run() error {
 		return err
 	}
 
-	return o.PrintObject(convertedObj, o.Out)
+	return o.printObj(convertedObj, o.ioStreams.Out)
 }
 
 // NewRestClientForContext initializes an API server REST client from a given context
@@ -312,15 +319,15 @@ func (o *Options) NewRestClientForContext(ctxname string) (*kubernetes.Clientset
 
 	config := clientcmdapi.NewConfig()
 	config.CurrentContext = ctxname
-	context := o.RawConfig.Contexts[ctxname]
+	context := o.raw.Contexts[ctxname]
 
-	authInfo, ok := o.RawConfig.AuthInfos[context.AuthInfo]
+	authInfo, ok := o.raw.AuthInfos[context.AuthInfo]
 	if !ok {
-		return nil, fmt.Errorf("AuthInfo not found for context: %s", ctxname)
+		return nil, fmt.Errorf("authInfo not found for context: %s", ctxname)
 	}
-	cluster, ok := o.RawConfig.Clusters[context.Cluster]
+	cluster, ok := o.raw.Clusters[context.Cluster]
 	if !ok {
-		return nil, fmt.Errorf("Cluster not found for context: %s", ctxname)
+		return nil, fmt.Errorf("cluster not found for context: %s", ctxname)
 	}
 
 	config.Contexts[ctxname] = context
@@ -338,28 +345,28 @@ func (o *Options) NewRestClientForContext(ctxname string) (*kubernetes.Clientset
 }
 
 func (o *Options) keepContext(ctxname string) {
-	context := o.RawConfig.Contexts[ctxname]
-	o.ResultingConfig.Contexts[ctxname] = context
-	auth, ok := o.RawConfig.AuthInfos[context.AuthInfo]
+	context := o.raw.Contexts[ctxname]
+	o.result.Contexts[ctxname] = context
+	auth, ok := o.raw.AuthInfos[context.AuthInfo]
 	if ok {
-		o.ResultingConfig.AuthInfos[context.AuthInfo] = auth
+		o.result.AuthInfos[context.AuthInfo] = auth
 	}
-	cluster, ok := o.RawConfig.Clusters[context.Cluster]
+	cluster, ok := o.raw.Clusters[context.Cluster]
 	if ok {
-		o.ResultingConfig.Clusters[context.Cluster] = cluster
+		o.result.Clusters[context.Cluster] = cluster
 	}
 }
 
 func (o *Options) cleanupContext(ctxname string) {
-	context := o.RawConfig.Contexts[ctxname]
-	o.CleanedUpConfig.Contexts[ctxname] = context
-	auth, ok := o.RawConfig.AuthInfos[context.AuthInfo]
+	context := o.raw.Contexts[ctxname]
+	o.removed.Contexts[ctxname] = context
+	auth, ok := o.raw.AuthInfos[context.AuthInfo]
 	if ok {
-		o.CleanedUpConfig.AuthInfos[context.AuthInfo] = auth
+		o.removed.AuthInfos[context.AuthInfo] = auth
 	}
-	cluster, ok := o.RawConfig.Clusters[context.Cluster]
+	cluster, ok := o.raw.Clusters[context.Cluster]
 	if ok {
-		o.CleanedUpConfig.Clusters[context.Cluster] = cluster
+		o.removed.Clusters[context.Cluster] = cluster
 	}
 }
 

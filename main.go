@@ -1,18 +1,20 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/B23admin/kubectl-config-cleanup/cleanup"
-	"github.com/spf13/pflag"
 )
 
 func main() {
-	flags := pflag.NewFlagSet("kubectl-config-cleanup", pflag.ExitOnError)
-	pflag.CommandLine = flags
-
 	root := cleanup.NewCmdCleanup(os.Stdin, os.Stdout, os.Stderr)
 	if err := root.Execute(); err != nil {
+		fmt.Println(err)
 		os.Exit(1)
 	}
 }
+
+// func main() {
+// 	cleanup.Execute()
+// }
