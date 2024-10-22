@@ -89,13 +89,20 @@ https://github.com/kubernetes/kubernetes/issues/73791
 i.e. Dont do this: `kubectl config-cleanup --kubeconfig=~/.kube/config --raw > ~/.kube/config`
 
 A simple shell script `kubectl-config_swap` in your path can easily solve for this:
+
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-touch ~/.kube/config.swap
-mv ~/.kube/config ~/.kube/config.swap.tmp
-mv ~/.kube/config.swap ~/.kube/config
-mv ~/.kube/config.swap.tmp ~/.kube/config.swap
+
+# if $KUBECONFIG is not set, use default
+KUBECONFIG=${KUBECONFIG:-"$HOME/.kube/config"}
+printf "Using kubeconfig: %s\n" "${KUBECONFIG}" >&2
+
+touch "${KUBECONFIG}.swap" &&
+    mv "${KUBECONFIG}" "${KUBECONFIG}.swap.tmp" &&
+    mv "${KUBECONFIG}.swap" "${KUBECONFIG}" &&
+    mv "${KUBECONFIG}.swap.tmp" "${KUBECONFIG}.swap" &&
+    printf "Success.\n" >&2
 ```
 
 The workflow would appear as:
